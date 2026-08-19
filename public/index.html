@@ -127,6 +127,7 @@
       <button class="tabbtn" data-tab="news">📰 Nyheter</button>
       <button class="tabbtn" data-tab="gaming">🎮 Spelnyheter</button>
       <button class="tabbtn" data-tab="ai">🤖 AI-nyheter</button>
+      <button class="tabbtn" data-tab="positive">🌈 Positiva nyheter</button>
     </nav>
   </header>
 
@@ -254,6 +255,14 @@
     <div class="sub" id="aiStatus" style="margin-bottom:10px;">Laddar AI-nyheter…</div>
     <div class="card">
       <ul class="news-list" id="aiList"></ul>
+    </div>
+  </section>
+
+  <!-- TAB 7: POSITIVA NYHETER -->
+  <section class="tabpanel" data-tab="positive">
+    <div class="sub" id="positiveStatus" style="margin-bottom:10px;">Laddar positiva nyheter…</div>
+    <div class="card">
+      <ul class="news-list" id="positiveList"></ul>
     </div>
   </section>
 
@@ -722,6 +731,7 @@ async function loadAggregatedNewsTab(endpoint, statusElId, listElId, failMsg){
 }
 const loadGamingTab = () => loadAggregatedNewsTab("/api/news/gaming", "gamingStatus", "gamingList", "Kunde inte hämta spelnyheter: ");
 const loadAiTab = () => loadAggregatedNewsTab("/api/news/ai", "aiStatus", "aiList", "Kunde inte hämta AI-nyheter: ");
+const loadPositiveTab = () => loadAggregatedNewsTab("/api/news/positive", "positiveStatus", "positiveList", "Kunde inte hämta positiva nyheter: ");
 
 /* ---------- Init ---------- */
 const loaders = {
@@ -730,7 +740,8 @@ const loaders = {
   sl: loadSlTab,
   news: loadNewsTab,
   gaming: loadGamingTab,
-  ai: loadAiTab
+  ai: loadAiTab,
+  positive: loadPositiveTab
 };
 
 const pageTitleEl = document.getElementById("pageTitle");
@@ -752,6 +763,7 @@ setInterval(() => { if (loadedTabs.has("sl")) loadSlTab(); }, 2 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("news")) loadNewsTab(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("ai")) loadAiTab(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("gaming")) loadGamingTab(); }, 10 * 60 * 1000);
+setInterval(() => { if (loadedTabs.has("positive")) loadPositiveTab(); }, 10 * 60 * 1000);
 </script>
 </body>
 </html>

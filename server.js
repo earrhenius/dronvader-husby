@@ -83,7 +83,9 @@ const NEWS_SOURCES = {
   eurogamer: { name: "Eurogamer", url: "https://www.eurogamer.net/feed" },
   techcrunch_ai: { name: "TechCrunch AI", url: "https://techcrunch.com/category/artificial-intelligence/feed/" },
   venturebeat_ai: { name: "VentureBeat AI", url: "https://venturebeat.com/category/ai/feed/" },
-  verge_ai: { name: "The Verge AI", url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml" }
+  verge_ai: { name: "The Verge AI", url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml" },
+  goodnews: { name: "Good News Network", url: "https://www.goodnewsnetwork.org/feed/" },
+  optimistdaily: { name: "Optimist Daily", url: "https://www.optimistdaily.com/feed/" }
 };
 
 async function fetchFeed(key) {
@@ -127,6 +129,14 @@ app.get("/api/news/gaming", async (req, res) => {
 app.get("/api/news/ai", async (req, res) => {
   try {
     res.json(await aggregateFeeds(["techcrunch_ai", "venturebeat_ai", "verge_ai"]));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.get("/api/news/positive", async (req, res) => {
+  try {
+    res.json(await aggregateFeeds(["goodnews", "optimistdaily"]));
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
