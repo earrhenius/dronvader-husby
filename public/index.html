@@ -122,7 +122,7 @@
     <h1 id="pageTitle">📋 Dagliga uppdateringar</h1>
     <nav class="tabbar" id="tabbar">
       <button class="tabbtn" data-tab="drone">🛩️ Drönarväder</button>
-      <button class="tabbtn" data-tab="weather">🌦️ Märsta &amp; Stockholm</button>
+      <button class="tabbtn" data-tab="weather">🌦️ Väder</button>
       <button class="tabbtn" data-tab="sl">🚆 SL-trafik</button>
       <button class="tabbtn" data-tab="news">📰 Nyheter</button>
       <button class="tabbtn" data-tab="gaming">🎮 Spelnyheter</button>
@@ -513,6 +513,8 @@ renderObstacles();
 
 /* ---------- TAB 2: Väder Märsta & Stockholm ---------- */
 const WX_PLACES = [
+  { key: "husby", name: "Husby-Långhundra", lat: 59.7507, lon: 18.0176 },
+  { key: "uppsala", name: "Uppsala", lat: 59.8586, lon: 17.6389 },
   { key: "marsta", name: "Märsta", lat: 59.6297, lon: 17.8556 },
   { key: "stockholm", name: "Stockholm City", lat: 59.3293, lon: 18.0686 }
 ];
