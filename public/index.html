@@ -305,6 +305,27 @@ function weatherEmoji(code){
   return "🌡️";
 }
 
+/* Render.se-servern på gratisplanen somnar efter inaktivitet och kan ta upp till en minut
+   att vakna. Första anropet efter en vila misslyckas ofta med ett kort fel, så vi försöker
+   om automatiskt i stället för att kräva att användaren uppdaterar sidan manuellt. */
+async function fetchJson(url, { attempts = 6, delayMs = 6000, onRetry } = {}){
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt++){
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      if (attempt < attempts){
+        onRetry && onRetry(attempt, attempts);
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /* ---------- TAB 1: Drönarväder ---------- */
 const DEFAULTS = { lat: 59.7507, lon: 18.0176, maxWind: 8, maxGust: 10, minTemp: 0, minVis: 3000 };
 const LS_SETTINGS = "dronvader_settings";
@@ -354,7 +375,7 @@ function evaluate(hour, settings){
   return { level, reason: reasons.join(" · ") };
 }
 
-async function fetchWeather(settings, extraHourly){
+async function fetchWeather(settings, extraHourly, onRetry){
   const params = new URLSearchParams({
     latitude: settings.lat,
     longitude: settings.lon,
@@ -365,9 +386,7 @@ async function fetchWeather(settings, extraHourly){
     timezone: "Europe/Stockholm",
     forecast_days: "2"
   });
-  const res = await fetch(`/api/weather?${params.toString()}`);
-  if (!res.ok) throw new Error("Väderdata kunde inte hämtas (" + res.status + ")");
-  return res.json();
+  return fetchJson(`/api/weather?${params.toString()}`, { onRetry });
 }
 
 function nearestHourIndex(data){
@@ -467,7 +486,9 @@ async function refreshDrone(){
   const statusEl = document.getElementById("droneStatus");
   statusEl.textContent = "Hämtar väderdata…";
   try {
-    const data = await fetchWeather(currentSettings);
+    const data = await fetchWeather(currentSettings, null, (attempt, total) => {
+      statusEl.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+    });
     renderDroneCurrent(data, currentSettings);
     renderDroneForecast(data, currentSettings);
     statusEl.textContent = `Uppdaterad ${new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"})} · ${currentSettings.lat}, ${currentSettings.lon}`;
@@ -532,9 +553,12 @@ async function loadWeatherTab(){
         hourly: "temperature_2m,weather_code",
         wind_speed_unit: "ms", timezone: "Europe/Stockholm", forecast_days: "2"
       });
-      const res = await fetch(`/api/weather?${params.toString()}`);
-      if (!res.ok) throw new Error(place.name + ": HTTP " + res.status);
-      return { place, data: await res.json() };
+      const data = await fetchJson(`/api/weather?${params.toString()}`, {
+        onRetry: (attempt, total) => {
+          status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+        }
+      });
+      return { place, data };
     }));
     results.forEach(({ place, data }) => {
       const c = data.current;
@@ -615,9 +639,11 @@ async function loadSlTab(){
   const status = document.getElementById("slStatus");
   status.textContent = "Hämtar trafikinformation…";
   try {
-    const res = await fetch("/api/sl-deviations");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    slData = await res.json();
+    slData = await fetchJson("/api/sl-deviations", {
+      onRetry: (attempt, total) => {
+        status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+      }
+    });
     renderSl();
     status.textContent = "Uppdaterad " + new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"}) + ` · ${slData.length} störningar totalt`;
   } catch(e){
@@ -650,9 +676,12 @@ async function loadNewsTab(){
     </div>
   `).join("");
   const results = await Promise.allSettled(NEWS_KEYS.map(async s => {
-    const res = await fetch(`/api/news/${s.key}`);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return { key: s.key, data: await res.json() };
+    const data = await fetchJson(`/api/news/${s.key}`, {
+      onRetry: (attempt, total) => {
+        status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+      }
+    });
+    return { key: s.key, data };
   }));
   results.forEach((r, i) => {
     const el = document.getElementById(`news-${NEWS_KEYS[i].key}`);
@@ -671,9 +700,11 @@ async function loadAggregatedNewsTab(endpoint, statusElId, listElId, failMsg){
   const list = document.getElementById(listElId);
   status.textContent = "Hämtar…";
   try {
-    const res = await fetch(endpoint);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+    const data = await fetchJson(endpoint, {
+      onRetry: (attempt, total) => {
+        status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+      }
+    });
     list.innerHTML = data.items.map(it => `<li class="news-item">
       <a href="${it.link}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>
       <div class="meta">${it.source}${it.pubDate ? " · " + fmtDateTime(it.pubDate) : ""}</div>
@@ -704,7 +735,7 @@ const pageTitleEl = document.getElementById("pageTitle");
 const todayLabel = new Date().toLocaleDateString("sv-SE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 const baseTitle = `📋 Dagliga uppdateringar – ${todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)}`;
 pageTitleEl.textContent = baseTitle;
-fetch("/api/nameday").then(r => r.json()).then(data => {
+fetchJson("/api/nameday").then(data => {
   if (data.names && data.names.length){
     pageTitleEl.textContent = `${baseTitle} · Namnsdag: ${data.names.join(", ")}`;
   }
