@@ -76,6 +76,8 @@ const NEWS_SOURCES = {
   svt: { name: "SVT Nyheter", url: "https://www.svt.se/nyheter/rss.xml" },
   bbc: { name: "BBC News", url: "https://feeds.bbci.co.uk/news/rss.xml" },
   dailymail: { name: "Daily Mail", url: "https://www.dailymail.co.uk/articles.rss" },
+  sigtuna: { name: "Sigtuna/Märsta", url: "https://www.marsta.nu/feed/" },
+  knivsta: { name: "Knivsta", url: "https://knivstadirekt.se/feed/" },
   ign: { name: "IGN", url: "https://feeds.ign.com/ign/all" },
   pcgamer: { name: "PC Gamer", url: "https://www.pcgamer.com/rss/" },
   eurogamer: { name: "Eurogamer", url: "https://www.eurogamer.net/feed" },
