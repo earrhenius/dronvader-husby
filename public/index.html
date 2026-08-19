@@ -114,6 +114,18 @@
   .news-item a:hover{color:var(--accent);}
   .news-item .meta{font-size:0.7rem;color:var(--muted);margin-top:3px;}
   .news-list{list-style:none;padding:0;margin:0;}
+
+  /* Event (tab 8) */
+  select{padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.9rem;font-weight:600;}
+  .event-daygroup{margin-bottom:18px;}
+  .event-daygroup h3{font-size:0.85rem;color:var(--accent);margin:0 0 8px;text-transform:capitalize;}
+  .event-card{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--border);}
+  .event-card:last-child{border-bottom:none;}
+  .event-card .time{flex:0 0 auto;min-width:44px;font-size:0.8rem;color:var(--muted);font-weight:600;}
+  .event-card .info{flex:1;}
+  .event-card .info a{color:var(--text);text-decoration:none;font-weight:600;font-size:0.92rem;}
+  .event-card .info a:hover{color:var(--accent);}
+  .event-card .venue{font-size:0.78rem;color:var(--muted);margin-top:2px;}
 </style>
 </head>
 <body>
@@ -128,6 +140,7 @@
       <button class="tabbtn" data-tab="gaming">🎮 Spelnyheter</button>
       <button class="tabbtn" data-tab="ai">🤖 AI-nyheter</button>
       <button class="tabbtn" data-tab="positive">🌈 Positiva nyheter</button>
+      <button class="tabbtn" data-tab="events">🎫 Event</button>
     </nav>
   </header>
 
@@ -264,6 +277,22 @@
     <div class="card">
       <ul class="news-list" id="positiveList"></ul>
     </div>
+  </section>
+
+  <!-- TAB 8: EVENT -->
+  <section class="tabpanel" data-tab="events">
+    <div class="row" style="margin-bottom:10px;">
+      <select id="eventCity">
+        <option value="knivsta">Knivsta</option>
+        <option value="uppsala" selected>Uppsala</option>
+        <option value="stockholm">Stockholm</option>
+      </select>
+    </div>
+    <div class="sub" id="eventsStatus" style="margin-bottom:10px;">Laddar event…</div>
+    <div class="card" id="eventsCard">
+      <div id="eventsList"></div>
+    </div>
+    <div class="note">Data från Ticketmasters Discovery API. Täcker mest biljetterade konserter, festivaler och kulturevenemang — mindre "prova på"-aktiviteter kanske inte listas.</div>
   </section>
 
   <footer>
@@ -733,6 +762,52 @@ const loadGamingTab = () => loadAggregatedNewsTab("/api/news/gaming", "gamingSta
 const loadAiTab = () => loadAggregatedNewsTab("/api/news/ai", "aiStatus", "aiList", "Kunde inte hämta AI-nyheter: ");
 const loadPositiveTab = () => loadAggregatedNewsTab("/api/news/positive", "positiveStatus", "positiveList", "Kunde inte hämta positiva nyheter: ");
 
+/* ---------- TAB 8: Event ---------- */
+async function loadEventsTab(){
+  const status = document.getElementById("eventsStatus");
+  const list = document.getElementById("eventsList");
+  const city = document.getElementById("eventCity").value;
+  status.textContent = "Hämtar event…";
+  try {
+    const data = await fetchJson(`/api/events?city=${city}`, {
+      onRetry: (attempt, total) => {
+        status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+      }
+    });
+    const events = data.events || [];
+    if (events.length === 0){
+      list.innerHTML = `<div class="muted-small">Inga kommande event hittades för ${data.city} just nu.</div>`;
+    } else {
+      const groups = new Map();
+      events.forEach(ev => {
+        const dateKey = ev.start ? ev.start.slice(0, 10) : "okänt-datum";
+        if (!groups.has(dateKey)) groups.set(dateKey, []);
+        groups.get(dateKey).push(ev);
+      });
+      list.innerHTML = [...groups.entries()].map(([dateKey, evs]) => {
+        const dayLabel = dateKey === "okänt-datum" ? "Datum okänt" :
+          new Date(dateKey + "T00:00:00").toLocaleDateString("sv-SE", { weekday: "long", day: "numeric", month: "long" });
+        const rows = evs.map(ev => {
+          const time = ev.start && ev.start.length > 10 ? ev.start.slice(11, 16) : "";
+          const tag = ev.genre || ev.classification || "";
+          return `<div class="event-card">
+            <div class="time">${time}</div>
+            <div class="info">
+              <a href="${ev.url}" target="_blank" rel="noopener">${escapeHtml(ev.name)}</a>
+              <div class="venue">${escapeHtml(ev.venue)}${tag ? " · " + escapeHtml(tag) : ""}</div>
+            </div>
+          </div>`;
+        }).join("");
+        return `<div class="event-daygroup"><h3>${dayLabel}</h3>${rows}</div>`;
+      }).join("");
+    }
+    status.textContent = `Uppdaterad ${new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"})} · ${data.city}`;
+  } catch(e){
+    status.textContent = "Kunde inte hämta event: " + e.message;
+  }
+}
+document.getElementById("eventCity").addEventListener("change", loadEventsTab);
+
 /* ---------- Init ---------- */
 const loaders = {
   drone: refreshDrone,
@@ -741,7 +816,8 @@ const loaders = {
   news: loadNewsTab,
   gaming: loadGamingTab,
   ai: loadAiTab,
-  positive: loadPositiveTab
+  positive: loadPositiveTab,
+  events: loadEventsTab
 };
 
 const pageTitleEl = document.getElementById("pageTitle");
@@ -764,6 +840,7 @@ setInterval(() => { if (loadedTabs.has("news")) loadNewsTab(); }, 10 * 60 * 1000
 setInterval(() => { if (loadedTabs.has("ai")) loadAiTab(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("gaming")) loadGamingTab(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("positive")) loadPositiveTab(); }, 10 * 60 * 1000);
+setInterval(() => { if (loadedTabs.has("events")) loadEventsTab(); }, 30 * 60 * 1000);
 </script>
 </body>
 </html>

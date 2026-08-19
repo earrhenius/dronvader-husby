@@ -1,6 +1,19 @@
 const path = require("path");
+const fs = require("fs");
 const express = require("express");
 const Parser = require("rss-parser");
+
+// Lätt .env-inläsning (ingen extra dependency). Filen är gitignorad —
+// den är bara till för lokal utveckling; på Render sätts miljövariabler i dashboarden.
+try {
+  const envPath = path.join(__dirname, ".env");
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)\s*$/);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+    }
+  }
+} catch { /* ignore */ }
 
 const app = express();
 const parser = new Parser({ timeout: 10000 });
@@ -137,6 +150,49 @@ app.get("/api/news/ai", async (req, res) => {
 app.get("/api/news/positive", async (req, res) => {
   try {
     res.json(await aggregateFeeds(["goodnews", "optimistdaily"]));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+const EVENT_CITIES = {
+  knivsta: "Knivsta",
+  uppsala: "Uppsala",
+  stockholm: "Stockholm"
+};
+
+app.get("/api/events", async (req, res) => {
+  const cityKey = req.query.city;
+  const cityName = EVENT_CITIES[cityKey];
+  if (!cityName) {
+    return res.status(400).json({ error: "Ogiltig stad. Använd knivsta, uppsala eller stockholm." });
+  }
+  if (!process.env.TICKETMASTER_API_KEY) {
+    return res.status(503).json({ error: "TICKETMASTER_API_KEY är inte konfigurerad på servern." });
+  }
+  try {
+    const data = await cached("events:" + cityKey, 30 * 60 * 1000, async () => {
+      const params = new URLSearchParams({
+        apikey: process.env.TICKETMASTER_API_KEY,
+        city: cityName,
+        countryCode: "SE",
+        sort: "date,asc",
+        size: "50"
+      });
+      const r = await fetch(`https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`);
+      if (!r.ok) throw new Error("Ticketmaster svarade " + r.status);
+      const json = await r.json();
+      const events = (json._embedded?.events || []).map(e => ({
+        name: e.name,
+        url: e.url,
+        start: e.dates?.start?.dateTime || e.dates?.start?.localDate || null,
+        venue: e._embedded?.venues?.[0]?.name || "",
+        classification: e.classifications?.[0]?.segment?.name || "",
+        genre: e.classifications?.[0]?.genre?.name || ""
+      }));
+      return { city: cityName, events };
+    });
+    res.json(data);
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
