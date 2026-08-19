@@ -1,19 +1,6 @@
 const path = require("path");
-const fs = require("fs");
 const express = require("express");
 const Parser = require("rss-parser");
-
-// Lätt .env-inläsning (ingen extra dependency). Filen är gitignorad —
-// den är bara till för lokal utveckling; på Render sätts miljövariabler i dashboarden.
-try {
-  const envPath = path.join(__dirname, ".env");
-  if (fs.existsSync(envPath)) {
-    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
-      const m = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)\s*$/);
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
-    }
-  }
-} catch { /* ignore */ }
 
 const app = express();
 const parser = new Parser({ timeout: 10000 });
@@ -98,7 +85,27 @@ const NEWS_SOURCES = {
   venturebeat_ai: { name: "VentureBeat AI", url: "https://venturebeat.com/category/ai/feed/" },
   verge_ai: { name: "The Verge AI", url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml" },
   goodnews: { name: "Good News Network", url: "https://www.goodnewsnetwork.org/feed/" },
-  optimistdaily: { name: "Optimist Daily", url: "https://www.optimistdaily.com/feed/" }
+  optimistdaily: { name: "Optimist Daily", url: "https://www.optimistdaily.com/feed/" },
+  evt_uppsala_konsert: { name: "Konsert", url: "https://destinationuppsala.se/event-kategori/konsert/feed/" },
+  evt_uppsala_festival: { name: "Festival", url: "https://destinationuppsala.se/event-kategori/festival/feed/" },
+  evt_uppsala_marknad: { name: "Marknad", url: "https://destinationuppsala.se/event-kategori/marknad/feed/" },
+  evt_uppsala_julmarknad: { name: "Julmarknad", url: "https://destinationuppsala.se/event-kategori/julmarknad/feed/" },
+  evt_uppsala_teater: { name: "Teater", url: "https://destinationuppsala.se/event-kategori/teater/feed/" },
+  evt_uppsala_utstallning: { name: "Utställning", url: "https://destinationuppsala.se/event-kategori/utstallning/feed/" },
+  evt_uppsala_aktiviteter: { name: "Aktiviteter", url: "https://destinationuppsala.se/event-kategori/aktiviteter/feed/" },
+  evt_uppsala_barnfamilj: { name: "Barn & familj", url: "https://destinationuppsala.se/event-kategori/barn-familj/feed/" },
+  evt_uppsala_matdryck: { name: "Mat & dryck", url: "https://destinationuppsala.se/event-kategori/mat-dryck/feed/" },
+  evt_knivsta_visit: { name: "Visit Knivsta", url: "https://www.visitknivsta.se/feed/" }
+};
+
+const EVENT_CITY_FEEDS = {
+  uppsala: [
+    "evt_uppsala_konsert", "evt_uppsala_festival", "evt_uppsala_marknad", "evt_uppsala_julmarknad",
+    "evt_uppsala_teater", "evt_uppsala_utstallning", "evt_uppsala_aktiviteter", "evt_uppsala_barnfamilj",
+    "evt_uppsala_matdryck"
+  ],
+  knivsta: ["evt_knivsta_visit"]
+  // stockholm: ingen fungerande nyckelfri källa hittades (visitstockholm.com är en JS-app utan RSS/API)
 };
 
 async function fetchFeed(key) {
@@ -155,44 +162,16 @@ app.get("/api/news/positive", async (req, res) => {
   }
 });
 
-const EVENT_CITIES = {
-  knivsta: "Knivsta",
-  uppsala: "Uppsala",
-  stockholm: "Stockholm"
-};
-
 app.get("/api/events", async (req, res) => {
   const cityKey = req.query.city;
-  const cityName = EVENT_CITIES[cityKey];
-  if (!cityName) {
-    return res.status(400).json({ error: "Ogiltig stad. Använd knivsta, uppsala eller stockholm." });
-  }
-  if (!process.env.TICKETMASTER_API_KEY) {
-    return res.status(503).json({ error: "TICKETMASTER_API_KEY är inte konfigurerad på servern." });
+  const feedKeys = EVENT_CITY_FEEDS[cityKey];
+  if (!feedKeys) {
+    // t.ex. Stockholm: ingen fungerande nyckelfri källa hittades, frontend visar länk-ut-läge
+    return res.json({ city: cityKey, items: [], unsupported: true });
   }
   try {
-    const data = await cached("events:" + cityKey, 30 * 60 * 1000, async () => {
-      const params = new URLSearchParams({
-        apikey: process.env.TICKETMASTER_API_KEY,
-        city: cityName,
-        countryCode: "SE",
-        sort: "date,asc",
-        size: "50"
-      });
-      const r = await fetch(`https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`);
-      if (!r.ok) throw new Error("Ticketmaster svarade " + r.status);
-      const json = await r.json();
-      const events = (json._embedded?.events || []).map(e => ({
-        name: e.name,
-        url: e.url,
-        start: e.dates?.start?.dateTime || e.dates?.start?.localDate || null,
-        venue: e._embedded?.venues?.[0]?.name || "",
-        classification: e.classifications?.[0]?.segment?.name || "",
-        genre: e.classifications?.[0]?.genre?.name || ""
-      }));
-      return { city: cityName, events };
-    });
-    res.json(data);
+    const agg = await aggregateFeeds(feedKeys);
+    res.json({ city: cityKey, items: agg.items, errors: agg.errors });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }

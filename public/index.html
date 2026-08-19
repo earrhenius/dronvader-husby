@@ -117,15 +117,7 @@
 
   /* Event (tab 8) */
   select{padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.9rem;font-weight:600;}
-  .event-daygroup{margin-bottom:18px;}
-  .event-daygroup h3{font-size:0.85rem;color:var(--accent);margin:0 0 8px;text-transform:capitalize;}
-  .event-card{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--border);}
-  .event-card:last-child{border-bottom:none;}
-  .event-card .time{flex:0 0 auto;min-width:44px;font-size:0.8rem;color:var(--muted);font-weight:600;}
-  .event-card .info{flex:1;}
-  .event-card .info a{color:var(--text);text-decoration:none;font-weight:600;font-size:0.92rem;}
-  .event-card .info a:hover{color:var(--accent);}
-  .event-card .venue{font-size:0.78rem;color:var(--muted);margin-top:2px;}
+  .event-tag{font-size:0.7rem;color:var(--accent);}
 </style>
 </head>
 <body>
@@ -290,9 +282,9 @@
     </div>
     <div class="sub" id="eventsStatus" style="margin-bottom:10px;">Laddar event…</div>
     <div class="card" id="eventsCard">
-      <div id="eventsList"></div>
+      <ul class="news-list" id="eventsList"></ul>
     </div>
-    <div class="note">Data från Ticketmasters Discovery API. Täcker mest biljetterade konserter, festivaler och kulturevenemang — mindre "prova på"-aktiviteter kanske inte listas.</div>
+    <div class="note" id="eventsNote">Listan visar nyligen publicerade tips — sorterat på när det lades upp, inte nödvändigtvis på händelsedatum. Klicka in på varje event för exakt datum, tid och plats.</div>
   </section>
 
   <footer>
@@ -763,10 +755,24 @@ const loadAiTab = () => loadAggregatedNewsTab("/api/news/ai", "aiStatus", "aiLis
 const loadPositiveTab = () => loadAggregatedNewsTab("/api/news/positive", "positiveStatus", "positiveList", "Kunde inte hämta positiva nyheter: ");
 
 /* ---------- TAB 8: Event ---------- */
+const EVENT_CITY_FALLBACK_LINKS = {
+  stockholm: [
+    { name: "Visit Stockholm – Events", url: "https://www.visitstockholm.com/events/" },
+    { name: "Thatsup Stockholm", url: "https://thatsup.se/stockholm/events/" }
+  ]
+};
+const EVENT_CITY_NOTES = {
+  uppsala: `Listan visar nyligen publicerade tips från Destination Uppsala (konserter, festivaler, marknader, teater m.m.) — sorterat på när det lades upp, inte på händelsedatum. Klicka in på varje event för exakt datum, tid och plats.`,
+  knivsta: `Enda nyckelfria källan jag hittade för Knivsta är Visit Knivstas allmänna flöde, så täckningen kan vara gles och blandad (inte renodlade event). Klicka in för detaljer.`,
+  stockholm: `Ingen fungerande nyckelfri kalenderkälla hittades för Stockholm — bläddra på de officiella sidorna istället.`
+};
+
 async function loadEventsTab(){
   const status = document.getElementById("eventsStatus");
   const list = document.getElementById("eventsList");
+  const note = document.getElementById("eventsNote");
   const city = document.getElementById("eventCity").value;
+  note.textContent = EVENT_CITY_NOTES[city] || "";
   status.textContent = "Hämtar event…";
   try {
     const data = await fetchJson(`/api/events?city=${city}`, {
@@ -774,34 +780,23 @@ async function loadEventsTab(){
         status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
       }
     });
-    const events = data.events || [];
-    if (events.length === 0){
-      list.innerHTML = `<div class="muted-small">Inga kommande event hittades för ${data.city} just nu.</div>`;
-    } else {
-      const groups = new Map();
-      events.forEach(ev => {
-        const dateKey = ev.start ? ev.start.slice(0, 10) : "okänt-datum";
-        if (!groups.has(dateKey)) groups.set(dateKey, []);
-        groups.get(dateKey).push(ev);
-      });
-      list.innerHTML = [...groups.entries()].map(([dateKey, evs]) => {
-        const dayLabel = dateKey === "okänt-datum" ? "Datum okänt" :
-          new Date(dateKey + "T00:00:00").toLocaleDateString("sv-SE", { weekday: "long", day: "numeric", month: "long" });
-        const rows = evs.map(ev => {
-          const time = ev.start && ev.start.length > 10 ? ev.start.slice(11, 16) : "";
-          const tag = ev.genre || ev.classification || "";
-          return `<div class="event-card">
-            <div class="time">${time}</div>
-            <div class="info">
-              <a href="${ev.url}" target="_blank" rel="noopener">${escapeHtml(ev.name)}</a>
-              <div class="venue">${escapeHtml(ev.venue)}${tag ? " · " + escapeHtml(tag) : ""}</div>
-            </div>
-          </div>`;
-        }).join("");
-        return `<div class="event-daygroup"><h3>${dayLabel}</h3>${rows}</div>`;
-      }).join("");
+    if (data.unsupported){
+      const links = EVENT_CITY_FALLBACK_LINKS[city] || [];
+      list.innerHTML = `<li class="muted-small" style="margin-bottom:10px;">Ingen inbyggd lista tillgänglig för ${city}.</li>` +
+        links.map(l => `<li class="news-item"><a href="${l.url}" target="_blank" rel="noopener">${escapeHtml(l.name)} ↗</a></li>`).join("");
+      status.textContent = "";
+      return;
     }
-    status.textContent = `Uppdaterad ${new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"})} · ${data.city}`;
+    const items = data.items || [];
+    list.innerHTML = items.map(it => `<li class="news-item">
+      <a href="${it.link}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>
+      <div class="meta"><span class="event-tag">${escapeHtml(it.source)}</span>${it.pubDate ? " · " + fmtDateTime(it.pubDate) : ""}</div>
+    </li>`).join("") || `<li class="muted-small">Inga event hittades just nu.</li>`;
+    let statusMsg = "Uppdaterad " + new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"});
+    if (data.errors && data.errors.length){
+      statusMsg += ` · Vissa källor kunde inte hämtas (${data.errors.length})`;
+    }
+    status.textContent = statusMsg;
   } catch(e){
     status.textContent = "Kunde inte hämta event: " + e.message;
   }
