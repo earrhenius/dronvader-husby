@@ -74,9 +74,9 @@
   footer a{color:var(--muted);}
 
   /* Tabs */
-  .tabbar{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--border);margin-bottom:16px;-webkit-overflow-scrolling:touch;}
-  .tabbtn{flex:0 0 auto;background:transparent;color:var(--muted);border:none;border-radius:0;padding:10px 14px;font-size:0.85rem;font-weight:600;border-bottom:2px solid transparent;white-space:nowrap;}
-  .tabbtn.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .tabbar{display:grid;grid-template-columns:repeat(3, 1fr);gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;padding-bottom:4px;}
+  .tabbtn{background:transparent;color:var(--muted);border:none;border-radius:8px;padding:10px 8px;font-size:0.85rem;font-weight:600;border-bottom:2px solid transparent;text-align:center;line-height:1.25;}
+  .tabbtn.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--bg);}
   .tabpanel{display:none;}
   .tabpanel.active{display:block;}
 
