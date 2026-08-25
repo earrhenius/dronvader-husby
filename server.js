@@ -72,6 +72,33 @@ app.get("/api/sl-deviations", async (req, res) => {
   }
 });
 
+// Site-id 9500 = Märsta pendeltågsstation. Alla pendeltåg härifrån (linje 41)
+// går söderut via Citybanan och stannar vid Stockholms södra.
+const MARSTA_SITE_ID = 9500;
+
+app.get("/api/timetable/marsta-sodra", async (req, res) => {
+  try {
+    const data = await cached("timetable:marsta-sodra", 60 * 1000, async () => {
+      const r = await fetch(`https://transport.integration.sl.se/v1/sites/${MARSTA_SITE_ID}/departures?transport=TRAIN&forecast=180`);
+      if (!r.ok) throw new Error("SL Transport API svarade " + r.status);
+      const json = await r.json();
+      const departures = (json.departures || []).map(d => ({
+        display: d.display,
+        scheduled: d.scheduled,
+        expected: d.expected,
+        line: d.line?.designation,
+        destination: d.destination,
+        state: d.state,
+        deviations: (d.deviations || []).map(dv => dv.message)
+      }));
+      return { departures };
+    });
+    res.json(data);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 const NEWS_SOURCES = {
   svt: { name: "SVT Nyheter", url: "https://www.svt.se/nyheter/rss.xml" },
   bbc: { name: "BBC News", url: "https://feeds.bbci.co.uk/news/rss.xml" },

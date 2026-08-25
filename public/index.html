@@ -91,6 +91,19 @@
   .wx-strip .h .tt{font-weight:600;color:var(--text);}
 
   /* SL deviations (tab 3) */
+  .sl-subtabbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  .sl-subtabbtn{background:var(--card);color:var(--muted);border:1px solid var(--border);border-radius:999px;font-weight:600;padding:7px 14px;font-size:0.82rem;}
+  .sl-subtabbtn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .sl-subpanel{display:none;}
+  .sl-subpanel.active{display:block;}
+  .tt-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .tt-row:last-child{border-bottom:none;}
+  .tt-row .tt-time{flex:0 0 auto;min-width:52px;font-weight:700;font-size:1rem;}
+  .tt-row .tt-time.cancelled{text-decoration:line-through;color:var(--bad);}
+  .tt-row .tt-line{flex:0 0 auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:0.78rem;font-weight:700;}
+  .tt-row .tt-info{flex:1;}
+  .tt-row .tt-dest{font-size:0.9rem;font-weight:600;}
+  .tt-row .tt-dev{font-size:0.76rem;color:var(--bad);margin-top:2px;}
   .sl-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
   .sl-filters button{background:var(--bg);color:var(--text);border:1px solid var(--border);font-weight:500;padding:6px 12px;}
   .sl-filters button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
@@ -226,18 +239,33 @@
 
   <!-- TAB 3: SL-TRAFIK -->
   <section class="tabpanel" data-tab="sl">
-    <div class="sub" id="slStatus" style="margin-bottom:10px;">Laddar trafikinformation…</div>
-    <div class="card">
-      <div class="sl-filters" id="slFilters">
-        <button data-mode="TRAIN" class="active">🚆 Pendeltåg</button>
-        <button data-mode="METRO">🚇 Tunnelbana</button>
-        <button data-mode="BUS">🚌 Buss</button>
-        <button data-mode="TRAM">🚊 Spårvagn</button>
-        <button data-mode="SHIP">⛴️ Båt</button>
-        <button data-mode="ALL">Alla</button>
+    <div class="sl-subtabbar" id="slSubtabbar">
+      <button class="sl-subtabbtn active" data-slsub="deviations">🚨 Trafikläget</button>
+      <button class="sl-subtabbtn" data-slsub="timetable">🕐 Tidtabell Märsta→Södra</button>
+    </div>
+
+    <div class="sl-subpanel active" data-slsub="deviations">
+      <div class="sub" id="slStatus" style="margin-bottom:10px;">Laddar trafikinformation…</div>
+      <div class="card">
+        <div class="sl-filters" id="slFilters">
+          <button data-mode="TRAIN" class="active">🚆 Pendeltåg</button>
+          <button data-mode="METRO">🚇 Tunnelbana</button>
+          <button data-mode="BUS">🚌 Buss</button>
+          <button data-mode="TRAM">🚊 Spårvagn</button>
+          <button data-mode="SHIP">⛴️ Båt</button>
+          <button data-mode="ALL">Alla</button>
+        </div>
+        <div id="slList"></div>
+        <div class="note">Data från SL:s öppna Deviations-API (via Trafiklab). Endast aktuella/kommande störningar visas.</div>
       </div>
-      <div id="slList"></div>
-      <div class="note">Data från SL:s öppna Deviations-API (via Trafiklab). Endast aktuella/kommande störningar visas.</div>
+    </div>
+
+    <div class="sl-subpanel" data-slsub="timetable">
+      <div class="sub" id="timetableStatus" style="margin-bottom:10px;">Laddar tidtabell…</div>
+      <div class="card">
+        <div id="timetableList"></div>
+        <div class="note">Realtidsavgångar från Märsta (linje 41, pendeltåg) söderut via Citybanan mot Stockholms södra. Data från SL:s öppna Transport-API.</div>
+      </div>
     </div>
   </section>
 
@@ -683,6 +711,61 @@ async function loadSlTab(){
   }
 }
 
+/* ---------- SL sub-tabs (Trafikläget / Tidtabell) ---------- */
+const loadedSlSubtabs = new Set();
+document.getElementById("slSubtabbar").addEventListener("click", (e) => {
+  const btn = e.target.closest(".sl-subtabbtn");
+  if (!btn) return;
+  const sub = btn.dataset.slsub;
+  document.querySelectorAll(".sl-subtabbtn").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll(".sl-subpanel").forEach(p => p.classList.toggle("active", p.dataset.slsub === sub));
+  if (!loadedSlSubtabs.has(sub)){
+    loadedSlSubtabs.add(sub);
+    if (sub === "timetable") loadTimetable();
+  }
+});
+
+function fmtClock(iso){
+  return new Date(iso).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+}
+
+async function loadTimetable(){
+  const status = document.getElementById("timetableStatus");
+  const list = document.getElementById("timetableList");
+  status.textContent = "Hämtar tidtabell…";
+  try {
+    const data = await fetchJson("/api/timetable/marsta-sodra", {
+      onRetry: (attempt, total) => {
+        status.textContent = `Servern vaknar (gratisplan hos Render) – försöker igen… (${attempt}/${total})`;
+      }
+    });
+    const departures = data.departures || [];
+    if (departures.length === 0){
+      list.innerHTML = `<div class="muted-small">Inga avgångar hittades just nu.</div>`;
+    } else {
+      list.innerHTML = departures.map(d => {
+        const cancelled = d.state === "CANCELLED";
+        const delayed = !cancelled && d.expected && d.scheduled && d.expected !== d.scheduled;
+        const timeLabel = fmtClock(d.scheduled);
+        const devHtml = (d.deviations || []).length
+          ? `<div class="tt-dev">${escapeHtml(d.deviations.join(" · "))}</div>` : "";
+        const delayHtml = delayed ? `<div class="tt-dev" style="color:var(--warn);">Nu beräknad ${fmtClock(d.expected)}</div>` : "";
+        return `<div class="tt-row">
+          <div class="tt-time${cancelled ? " cancelled" : ""}">${timeLabel}</div>
+          <div class="tt-line">${escapeHtml(d.line || "")}</div>
+          <div class="tt-info">
+            <div class="tt-dest">${cancelled ? "Inställd – " : ""}${escapeHtml(d.destination || "")}</div>
+            ${devHtml}${delayHtml}
+          </div>
+        </div>`;
+      }).join("");
+    }
+    status.textContent = "Uppdaterad " + new Date().toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"});
+  } catch(e){
+    status.textContent = "Kunde inte hämta tidtabell: " + e.message;
+  }
+}
+
 /* ---------- TAB 4: Nyheter ---------- */
 const NEWS_KEYS = [
   { key: "svt", name: "SVT Nyheter" },
@@ -833,6 +916,7 @@ activateTab(document.querySelector(`.tabbtn[data-tab="${savedTab}"]`) ? savedTab
 setInterval(() => { if (loadedTabs.has("drone")) refreshDrone(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("weather")) loadWeatherTab(); }, 15 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("sl")) loadSlTab(); }, 2 * 60 * 1000);
+setInterval(() => { if (loadedSlSubtabs.has("timetable")) loadTimetable(); }, 60 * 1000);
 setInterval(() => { if (loadedTabs.has("news")) loadNewsTab(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("ai")) loadAiTab(); }, 10 * 60 * 1000);
 setInterval(() => { if (loadedTabs.has("gaming")) loadGamingTab(); }, 10 * 60 * 1000);
