@@ -73,6 +73,8 @@
   footer{text-align:center;color:var(--muted);font-size:0.75rem;margin-top:20px;}
   footer a{color:var(--muted);}
 
+  #loadingBar{position:fixed;top:0;left:0;height:3px;width:0%;background:var(--accent);z-index:9999;opacity:0;transition:width 0.3s ease, opacity 0.3s ease;}
+
   /* Tabs */
   .tabbar{display:grid;grid-template-columns:repeat(3, 1fr);gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;padding-bottom:4px;}
   .tabbtn{background:transparent;color:var(--muted);border:none;border-radius:8px;padding:10px 8px;font-size:0.85rem;font-weight:600;border-bottom:2px solid transparent;text-align:center;line-height:1.25;}
@@ -134,6 +136,7 @@
 </style>
 </head>
 <body>
+<div id="loadingBar"></div>
 <div class="wrap">
   <header>
     <h1 id="pageTitle">📋 Dagliga uppdateringar</h1>
@@ -363,25 +366,59 @@ function weatherEmoji(code){
   return "🌡️";
 }
 
+/* Slim topp-progressbar: syns så länge minst ett fetchJson-anrop pågår. Räknaren
+   gör att flera samtidiga anrop (t.ex. väderfliken som hämtar 6 städer parallellt)
+   inte gömmer baren förrän ALLA är klara. */
+let activeFetchCount = 0;
+function loadingBarStart(){
+  activeFetchCount++;
+  const bar = document.getElementById("loadingBar");
+  bar.style.opacity = "1";
+  if (activeFetchCount === 1) bar.style.width = "15%";
+}
+function loadingBarBump(){
+  const bar = document.getElementById("loadingBar");
+  const current = parseFloat(bar.style.width) || 15;
+  bar.style.width = Math.min(current + 15, 90) + "%";
+}
+function loadingBarFinish(){
+  activeFetchCount = Math.max(0, activeFetchCount - 1);
+  if (activeFetchCount > 0) return;
+  const bar = document.getElementById("loadingBar");
+  bar.style.width = "100%";
+  setTimeout(() => {
+    if (activeFetchCount === 0){
+      bar.style.opacity = "0";
+      setTimeout(() => { if (activeFetchCount === 0) bar.style.width = "0%"; }, 300);
+    }
+  }, 200);
+}
+
 /* Render.se-servern på gratisplanen somnar efter inaktivitet och kan ta upp till en minut
    att vakna. Första anropet efter en vila misslyckas ofta med ett kort fel, så vi försöker
    om automatiskt i stället för att kräva att användaren uppdaterar sidan manuellt. */
 async function fetchJson(url, { attempts = 6, delayMs = 6000, onRetry } = {}){
+  loadingBarStart();
   let lastErr;
-  for (let attempt = 1; attempt <= attempts; attempt++){
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return await res.json();
-    } catch (e) {
-      lastErr = e;
-      if (attempt < attempts){
-        onRetry && onRetry(attempt, attempts);
-        await new Promise(r => setTimeout(r, delayMs));
+  try {
+    for (let attempt = 1; attempt <= attempts; attempt++){
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return await res.json();
+      } catch (e) {
+        lastErr = e;
+        if (attempt < attempts){
+          loadingBarBump();
+          onRetry && onRetry(attempt, attempts);
+          await new Promise(r => setTimeout(r, delayMs));
+        }
       }
     }
+    throw lastErr;
+  } finally {
+    loadingBarFinish();
   }
-  throw lastErr;
 }
 
 /* ---------- TAB 1: Drönarväder ---------- */
